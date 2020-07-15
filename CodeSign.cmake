@@ -1,5 +1,5 @@
 # Code signing support for CMake
-cmake_minimum_required(VERSION 3.18.0)
+cmake_minimum_required(VERSION 3.8.0)
 
 function(codesign_initialize)
 
@@ -44,7 +44,11 @@ function(codesign_initialize)
 
 		# List up any found Windows 10 SDK versions.
 		file(GLOB WINDOWS10KITS_VERSIONS "${WINDOWS10KITS_ROOT_DIR}/bin/10.*")
-		list(SORT WINDOWS10KITS_VERSIONS COMPARE NATURAL CASE INSENSITIVE ORDER DESCENDING)
+		if(CMAKE_VERSION VERSION_LESS "3.18.0")
+			list(REVERSE WINDOWS10KITS_VERSIONS)
+		else()
+			list(SORT WINDOWS10KITS_VERSIONS COMPARE NATURAL CASE INSENSITIVE ORDER DESCENDING)
+		endif()
 		
 		# Choose the ideal Windows 10 SDK version.
 		set(WINDOWS10KITS_PATH)
