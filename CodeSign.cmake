@@ -117,16 +117,16 @@ function(codesign_timestamp_server)
 	cmake_parse_arguments(
 		PARSE_ARGV 0
 		_ARGS
-		"SHA1;SHA2;SHA256"
+		"RFC3161"
 		"RETURN"
 		""
 	)
 
 	set(_list "")
-	if(_ARGS_SHA2 OR _ARGS_SHA256)
+	if(_ARGS_RFC3161)
 		list(APPEND _list
 			"http://timestamp.digicert.com"
-			"http://aatl-timestamp.globalsign.com/tsa/aohfewat2389535fnasgnlg5m23"
+#			"http://aatl-timestamp.globalsign.com/tsa/aohfewat2389535fnasgnlg5m23"
 #			"https://timestamp.sectigo.com"
 			"http://timestamp.entrust.net/TSS/RFC3161sha2TS"
 #			"http://tsa.swisssign.net"
@@ -139,8 +139,8 @@ function(codesign_timestamp_server)
 #			"http://zeitstempel.dfn.de"
 			"http://psis.catcert.cat/psis/catcert/tsp"
 			"http://sha256timestamp.ws.symantec.com/sha256/timestamp"
-			"http://rfc3161timestamp.globalsign.com/advanced"
-			"http://timestamp.globalsign.com/tsa/r6advanced1"
+#			"http://rfc3161timestamp.globalsign.com/advanced"
+#			"http://timestamp.globalsign.com/tsa/r6advanced1"
 			"http://timestamp.apple.com/ts01"
 #			"http://tsa.baltstamp.lt"
 #			"https://freetsa.org/tsr"
@@ -170,20 +170,23 @@ function(codesign_timestamp_server)
 	set(${_ARGS_RETURN} "${${_ARGS_RETURN}}" PARENT_SCOPE)
 endfunction()
 
-function(codesign_win32)
+function(codesign_command_win32)
 	cmake_parse_arguments(
 		PARSE_ARGV 0
 		_ARGS
+		"SHA1;APPEND"
+		"RETURN_BIN;RETURN_ARGS"
 		""
-		""
-		"TARGETS"
 	)
 
-	# ToDo: Timestamping
+	set(CMD_SHA1 "")
+	set(CMD_SHA2 "")
 
-	if((NOT CODESIGN_CERT_NAME) AND (NOT DEFINED ENV{CODESIGN_CERT_NAME}) AND (NOT CODESIGN_CERT_FILE) AND (NOT DEFINED ENV{CODESIGN_CERT_FILE}))
-		message(FATAL_ERROR "CMake CodeSign: One of CODESIGN_CERT_FILE or CODESIGN_CERT_NAME must be defined.")
-	endif()
+	codesign_timestamp_server(RETURN TIMESTAMP_SHA1)
+	codesign_timestamp_server(RFC3161 RETURN TIMESTAMP_SHA1_RFC3161)
+	codesign_timestamp_server(RFC3161 RETURN TIMESTAMP_SHA2_RFC3161)
+
+	separate_arguments(CODESIGN_ARGS NATIVE_COMMAND ${CODESIGN_ARGS})
 
 	if(CODESIGN_BIN_SIGNTOOL)
 		# This is 'signtool.exe'
@@ -193,155 +196,140 @@ function(codesign_win32)
 
 		# Parameters: File/Name
 		if(CODESIGN_CERT_FILE)
-			list(APPEND CMD_ARGS
-				/f "${CODESIGN_CERT_FILE}"
-			)
+			file(TO_NATIVE_PATH "${CODESIGN_CERT_FILE}" CERT_PATH)
+			list(APPEND CMD_ARGS /f "${CERT_PATH}")
 		elseif(DEFINED ENV{CODESIGN_CERT_FILE})
-			list(APPEND CMD_ARGS
-				/f "$ENV{CODESIGN_CERT_FILE}"
-			)
+			file(TO_NATIVE_PATH "$ENV{CODESIGN_CERT_FILE}" CERT_PATH)
+			list(APPEND CMD_ARGS /f "${CERT_PATH}")
 		elseif(CODESIGN_CERT_NAME)
-			list(APPEND CMD_ARGS
-				/n "${CODESIGN_CERT_NAME}"
-			)
+			list(APPEND CMD_ARGS /n "${CODESIGN_CERT_NAME}")
 		elseif(DEFINED ENV{CODESIGN_CERT_NAME})
-			list(APPEND CMD_ARGS
-				/n "$ENV{CODESIGN_CERT_NAME}"
-			)
+			list(APPEND CMD_ARGS /n "$ENV{CODESIGN_CERT_NAME}")
+		else()
+			message(FATAL_ERROR "CMake CodeSign: 'signtool' requires a certificate.")
 		endif()
 
 		# Parameters: Password
 		if(CODESIGN_CERT_PASS)
-			list(APPEND CMD_ARGS
-				/p "${CODESIGN_CERT_PASS}"
-			)
+			list(APPEND CMD_ARGS /p "${CODESIGN_CERT_PASS}")
 		elseif(DEFINED ENV{CODESIGN_CERT_PASS})
-			list(APPEND CMD_ARGS
-				/p "$ENV{CODESIGN_CERT_PASS}"
-			)
+			list(APPEND CMD_ARGS /p "$ENV{CODESIGN_CERT_PASS}")
 		endif()
 
 		# Parameters: Timestamping
 		if(CODESIGN_TIMESTAMPS)
-			codesign_timestamp_server(SHA1 RETURN TIMESTAMP_SHA1)
 			if(TIMESTAMP_SHA1)
-				list(APPEND CMD_ARGS_1
-					/t ${TIMESTAMP_SHA1}
-				)
+				list(APPEND CMD_ARGS_1 /t "${TIMESTAMP_SHA1}")
+			elseif(TIMESTAMP_SHA1_RFC3161)
+				list(APPEND CMD_ARGS_1 /tr "${TIMESTAMP_SHA1_RFC3161}")
 			endif()
 
-			codesign_timestamp_server(SHA2 RETURN TIMESTAMP_SHA2)
-			if(TIMESTAMP_SHA2)
-				if(NOT TIMESTAMP_SHA1)
-					list(APPEND CMD_ARGS_1
-						/tr ${TIMESTAMP_SHA2}
-					)
-				endif()
-				list(APPEND CMD_ARGS_2
-					/tr ${TIMESTAMP_SHA2}
-				)
+			if(TIMESTAMP_SHA2_RFC3161)
+				list(APPEND CMD_ARGS_2 /tr "${TIMESTAMP_SHA2_RFC3161}")
 			endif()
 		endif()
 
-		foreach(_target ${_ARGS_TARGETS})
-			# Sign SHA-1 (Windows 8 and earlier)
-			add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-				COMMAND ${CODESIGN_BIN_SIGNTOOL}
-				ARGS sign ${CMD_ARGS} ${CMD_ARGS_1} ${CODESIGN_ARGS} /fd sha1 /td sha1 $<TARGET_FILE:${_target}>
-			)
+		# Sign SHA-1 (Windows 8 and earlier)
+		list(APPEND CMD_SHA1 sign ${CMD_ARGS} ${CMD_ARGS_1} ${CODESIGN_ARGS} /fd sha1 /td sha1)
 
-			# Sign SHA-256 (Windows 10 and newer)
-			add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-				COMMAND ${CODESIGN_BIN_SIGNTOOL}
-				ARGS sign ${CMD_ARGS} ${CMD_ARGS_2} ${CODESIGN_ARGS} /fd sha256 /td sha256 /as $<TARGET_FILE:${_target}>
-			)
+		# Sign SHA-256 (Windows 10 and newer)
+		list(APPEND CMD_SHA2 sign ${CMD_ARGS} ${CMD_ARGS_2} ${CODESIGN_ARGS} /fd sha256 /td sha256)
 
-			message(STATUS "CMake CodeSign: Added post-build step to project '${_target}'.")
-		endforeach()
+		if(_ARGS_APPEND)
+			list(APPEND CMD_SHA1 /as)
+			list(APPEND CMD_SHA2 /as)
+		endif()
+
+		set(${_ARGS_RETURN_BIN} "${CODESIGN_BIN_SIGNTOOL}" PARENT_SCOPE)
 	elseif(CODESIGN_BIN_OSSLSIGNCODE)
 		# This is 'osslsigncode' from CygWin
 		SET(CMD_ARGS "")
 		SET(CMD_ARGS_1 "")
 		SET(CMD_ARGS_2 "")
-		if((NOT CODESIGN_CERT_FILE) OR (NOT EXISTS "${CODESIGN_CERT_FILE}"))
-			message(FATAL_ERROR "CMake CodeSign: 'osslsigncode' is unable to use Windows's certificate store, define CODESIGN_CERT_FILE.")
-		endif()
 
-		# Figure out command
+		# Parameters: File/Name
 		if(CODESIGN_CERT_FILE)
-			list(APPEND CMD_ARGS
-				-pkcs12 "${CODESIGN_CERT_FILE}"
-			)
+			file(TO_NATIVE_PATH "${CODESIGN_CERT_FILE}" CERT_PATH)
+			list(APPEND CMD_ARGS -pkcs12 "${CERT_PATH}")
 		elseif(DEFINED ENV{CODESIGN_CERT_FILE})
-			list(APPEND CMD_ARGS
-				-pkcs12 "$ENV{CODESIGN_CERT_FILE}"
-			)
+			file(TO_NATIVE_PATH "$ENV{CODESIGN_CERT_FILE}" CERT_PATH)
+			list(APPEND CMD_ARGS -pkcs12 "${CERT_PATH}")
 		elseif(CODESIGN_CERT_NAME)
-			# Not Supported
+			message(FATAL_ERROR "CMake CodeSign: 'osslsigncode' is unable to use Windows's certificate store, define CODESIGN_CERT_FILE.")
 		elseif(DEFINED ENV{CODESIGN_CERT_NAME})
-			# Not Supported
+			message(FATAL_ERROR "CMake CodeSign: 'osslsigncode' is unable to use Windows's certificate store, define CODESIGN_CERT_FILE.")
+		else()
+			message(FATAL_ERROR "CMake CodeSign: 'osslsigncode' requires a certificate.")
 		endif()
 
-		# Figure out extra arguments
+		# Parameters: Password
 		if(CODESIGN_CERT_PASS)
-			list(APPEND CMD_ARGS
-				-pass "${CODESIGN_CERT_PASS}"
-			)
+			list(APPEND CMD_ARGS -pass "${CODESIGN_CERT_PASS}")
 		elseif(DEFINED ENV{CODESIGN_CERT_PASS})
-			list(APPEND CMD_ARGS
-				-pass "$ENV{CODESIGN_CERT_PASS}"
-			)
+			list(APPEND CMD_ARGS -pass "$ENV{CODESIGN_CERT_PASS}")
 		endif()
 
 		# Parameters: Timestamping
 		if(CODESIGN_TIMESTAMPS)
-			codesign_timestamp_server(SHA1 RETURN TIMESTAMP_SHA1)
 			if(TIMESTAMP_SHA1)
-				list(APPEND CMD_ARGS_1
-					-t ${TIMESTAMP_SHA1}
-				)
+				list(APPEND CMD_ARGS_1 -t "${TIMESTAMP_SHA1}")
+			elseif(TIMESTAMP_SHA1_RFC3161)
+				list(APPEND CMD_ARGS_1 -ts "${TIMESTAMP_SHA1_RFC3161}")
 			endif()
 
-			codesign_timestamp_server(SHA2 RETURN TIMESTAMP_SHA2)
-			if(TIMESTAMP_SHA2)
-				if(NOT TIMESTAMP_SHA1)
-					list(APPEND CMD_ARGS_1
-						-ts ${TIMESTAMP_SHA2}
-					)
-				endif()
-				list(APPEND CMD_ARGS_2
-					-ts ${TIMESTAMP_SHA2}
-				)
+			if(TIMESTAMP_SHA2_RFC3161)
+				list(APPEND CMD_ARGS_2 -ts "${TIMESTAMP_SHA2_RFC3161}")
 			endif()
 		endif()
 
+		# Sign SHA-1 (Windows 8 and earlier)
+		list(APPEND CMD_SHA1 ${CMD_ARGS} ${CMD_ARGS_1} ${CODESIGN_ARGS} -h sha1)
 
-		# Figure out extra arguments
-		set(PASS_ARGS "")
-		if(CODESIGN_CERT_PASS)
-			set(PASS_ARGS "-pass ${CODESIGN_CERT_PASS}")
-		elseif(DEFINED ENV{CODESIGN_CERT_PASS})
-			set(PASS_ARGS "-pass $ENV{CODESIGN_CERT_PASS}")
+		# Sign SHA-256 (Windows 10 and newer)
+		list(APPEND CMD_SHA2 ${CMD_ARGS} ${CMD_ARGS_2} ${CODESIGN_ARGS} -h sha256)
+
+		if(_ARGS_APPEND)
+			list(APPEND CMD_SHA1 -nest)
+			list(APPEND CMD_SHA2 -nest)
 		endif()
 
-		foreach(_target ${_ARGS_TARGETS})
-			# Sign SHA-1 (Windows 8 and earlier)
-			add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-				COMMAND ${CODESIGN_BIN_OSSLSIGNCODE}
-				ARGS ${CMD_ARGS} ${CMD_ARGS_1} ${CODESIGN_ARGS} -h sha1 $<TARGET_FILE:${_target}>
-			)
-
-			# Sign SHA-256 (Windows 10 and newer)
-			add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-				COMMAND ${CODESIGN_BIN_OSSLSIGNCODE}
-				ARGS ${CMD_ARGS} ${CMD_ARGS_2} ${CODESIGN_ARGS} -h sha256 -nest $<TARGET_FILE:${_target}>
-			)
-
-			message(STATUS "CMake CodeSign: Added post-build step to project '${_target}'.")
-		endforeach()
+		set(${_ARGS_RETURN_BIN} "${CODESIGN_BIN_OSSLSIGNCODE}" PARENT_SCOPE)
 	else()
 		message(FATAL_ERROR "CMake CodeSign: No supported Tool found.")
 	endif()
+
+	if(_ARGS_SHA1)
+		set(${_ARGS_RETURN_ARGS} ${CMD_SHA1} PARENT_SCOPE)
+	else()
+		set(${_ARGS_RETURN_ARGS} ${CMD_SHA2} PARENT_SCOPE)
+	endif()
+endfunction()
+
+function(codesign_win32)
+	cmake_parse_arguments(
+		PARSE_ARGV 0
+		_ARGS
+		""
+		""
+		"TARGETS"
+	)
+
+	if((NOT CODESIGN_CERT_NAME) AND (NOT DEFINED ENV{CODESIGN_CERT_NAME}) AND (NOT CODESIGN_CERT_FILE) AND (NOT DEFINED ENV{CODESIGN_CERT_FILE}))
+		message(FATAL_ERROR "CMake CodeSign: One of CODESIGN_CERT_FILE or CODESIGN_CERT_NAME must be defined.")
+	endif()
+
+	# Generate Commands
+	codesign_command_win32(SHA1        RETURN_BIN BIN_SHA1 RETURN_ARGS CMD_SHA1)
+	codesign_command_win32(SHA2 APPEND RETURN_BIN BIN_SHA2 RETURN_ARGS CMD_SHA2)
+
+	# Sign Binaries
+	foreach(_target ${_ARGS_TARGETS})
+		add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+			COMMAND ${BIN_SHA1} ARGS ${CMD_SHA1} $<TARGET_FILE:${_target}>
+			COMMAND ${BIN_SHA2} ARGS ${CMD_SHA2} $<TARGET_FILE:${_target}>
+		)
+		message(STATUS "CMake CodeSign: Added post-build step to project '${_target}'.")
+	endforeach()
 endfunction()
 
 function(codesign)
