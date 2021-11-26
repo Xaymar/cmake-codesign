@@ -23,9 +23,6 @@ cmake_minimum_required(VERSION 3.8...4.0)
 
 set(CODESIGN_PATH "" CACHE PATH "Path to code signing tool (if not in environment).")
 set(CODESIGN_ARGS "" CACHE STRING "Additional Arguments to pass to tool.")
-set(CODESIGN_CERT_NAME "" CACHE STRING "Name of certificate to sign with.")
-set(CODESIGN_CERT_FILE "" CACHE FILEPATH "Path to the certificate to sign with. (Overrides CODESIGN_CERT_NAME)")
-set(CODESIGN_CERT_PASS "" CACHE STRING "Password for the certificate.")
 set(CODESIGN_TIMESTAMPS ON CACHE BOOL "Timestamp the signed binaries.")
 
 ################################################################################
@@ -174,8 +171,8 @@ function(codesign_command_win32)
 	cmake_parse_arguments(
 		PARSE_ARGV 0
 		_ARGS
-		"SHA1;APPEND"
-		"RETURN_BIN;RETURN_ARGS"
+		"SHA1;APPEND;TIMESTAMPS"
+		"RETURN_BIN;RETURN_ARGS;CERTIFICATE_FILE;CERTIFICATE_NAME;CERTIFICATE_PASS"
 		""
 	)
 
@@ -195,29 +192,22 @@ function(codesign_command_win32)
 		SET(CMD_ARGS_2 "")
 
 		# Parameters: File/Name
-		if(CODESIGN_CERT_FILE)
-			file(TO_NATIVE_PATH "${CODESIGN_CERT_FILE}" CERT_PATH)
+		if(_ARGS_CERTIFICATE_FILE)
+			file(TO_NATIVE_PATH "${_ARGS_CERTIFICATE_FILE}" CERT_PATH)
 			list(APPEND CMD_ARGS /f "${CERT_PATH}")
-		elseif(DEFINED ENV{CODESIGN_CERT_FILE})
-			file(TO_NATIVE_PATH "$ENV{CODESIGN_CERT_FILE}" CERT_PATH)
-			list(APPEND CMD_ARGS /f "${CERT_PATH}")
-		elseif(CODESIGN_CERT_NAME)
-			list(APPEND CMD_ARGS /n "${CODESIGN_CERT_NAME}")
-		elseif(DEFINED ENV{CODESIGN_CERT_NAME})
-			list(APPEND CMD_ARGS /n "$ENV{CODESIGN_CERT_NAME}")
+		elseif(_ARGS_CERTIFICATE_NAME)
+			list(APPEND CMD_ARGS /n "${_ARGS_CERTIFICATE_NAME}")
 		else()
 			message(FATAL_ERROR "CMake CodeSign: 'signtool' requires a certificate.")
 		endif()
 
 		# Parameters: Password
-		if(CODESIGN_CERT_PASS)
-			list(APPEND CMD_ARGS /p "${CODESIGN_CERT_PASS}")
-		elseif(DEFINED ENV{CODESIGN_CERT_PASS})
-			list(APPEND CMD_ARGS /p "$ENV{CODESIGN_CERT_PASS}")
+		if(_ARGS_CERTIFICATE_PASS)
+			list(APPEND CMD_ARGS /p "${_ARGS_CERTIFICATE_PASS}")
 		endif()
 
 		# Parameters: Timestamping
-		if(CODESIGN_TIMESTAMPS)
+		if(_ARGS_TIMESTAMPS)
 			if(TIMESTAMP_SHA1)
 				list(APPEND CMD_ARGS_1 /t "${TIMESTAMP_SHA1}")
 			elseif(TIMESTAMP_SHA1_RFC3161)
@@ -248,29 +238,22 @@ function(codesign_command_win32)
 		SET(CMD_ARGS_2 "")
 
 		# Parameters: File/Name
-		if(CODESIGN_CERT_FILE)
-			file(TO_NATIVE_PATH "${CODESIGN_CERT_FILE}" CERT_PATH)
+		if(_ARGS_CERTIFICATE_FILE)
+			file(TO_NATIVE_PATH "${_ARGS_CERTIFICATE_FILE}" CERT_PATH)
 			list(APPEND CMD_ARGS -pkcs12 "${CERT_PATH}")
-		elseif(DEFINED ENV{CODESIGN_CERT_FILE})
-			file(TO_NATIVE_PATH "$ENV{CODESIGN_CERT_FILE}" CERT_PATH)
-			list(APPEND CMD_ARGS -pkcs12 "${CERT_PATH}")
-		elseif(CODESIGN_CERT_NAME)
-			message(FATAL_ERROR "CMake CodeSign: 'osslsigncode' is unable to use Windows's certificate store, define CODESIGN_CERT_FILE.")
-		elseif(DEFINED ENV{CODESIGN_CERT_NAME})
-			message(FATAL_ERROR "CMake CodeSign: 'osslsigncode' is unable to use Windows's certificate store, define CODESIGN_CERT_FILE.")
+		elseif(_ARGS_CERTIFICATE_NAME)
+			message(FATAL_ERROR "CMake CodeSign: 'osslsigncode' is unable to use Windows's certificate store, define CERTIFICATE_FILE.")
 		else()
 			message(FATAL_ERROR "CMake CodeSign: 'osslsigncode' requires a certificate.")
 		endif()
 
 		# Parameters: Password
-		if(CODESIGN_CERT_PASS)
-			list(APPEND CMD_ARGS -pass "${CODESIGN_CERT_PASS}")
-		elseif(DEFINED ENV{CODESIGN_CERT_PASS})
-			list(APPEND CMD_ARGS -pass "$ENV{CODESIGN_CERT_PASS}")
+		if(_ARGS_CERTIFICATE_PASS)
+			list(APPEND CMD_ARGS -pass "${_ARGS_CERTIFICATE_PASS}")
 		endif()
 
 		# Parameters: Timestamping
-		if(CODESIGN_TIMESTAMPS)
+		if(_ARGS_TIMESTAMPS)
 			if(TIMESTAMP_SHA1)
 				list(APPEND CMD_ARGS_1 -t "${TIMESTAMP_SHA1}")
 			elseif(TIMESTAMP_SHA1_RFC3161)
@@ -309,24 +292,38 @@ function(codesign_win32)
 	cmake_parse_arguments(
 		PARSE_ARGV 0
 		_ARGS
-		""
-		""
+		"TIMESTAMPS"
+		"CERTIFICATE_FILE;CERTIFICATE_NAME;CERTIFICATE_PASS"
 		"TARGETS"
 	)
 
-	if((NOT CODESIGN_CERT_NAME) AND (NOT DEFINED ENV{CODESIGN_CERT_NAME}) AND (NOT CODESIGN_CERT_FILE) AND (NOT DEFINED ENV{CODESIGN_CERT_FILE}))
-		message(FATAL_ERROR "CMake CodeSign: One of CODESIGN_CERT_FILE or CODESIGN_CERT_NAME must be defined.")
+	if((NOT _ARGS_CERTIFICATE_FILE) AND (NOT _ARGS_CERTIFICATE_NAME))
+		message(FATAL_ERROR "CMake CodeSign: One of CERTIFICATE_FILE or CERTIFICATE_NAME must be defined.")
 	endif()
 
 	# Generate Commands
-	codesign_command_win32(SHA1        RETURN_BIN BIN_SHA1 RETURN_ARGS CMD_SHA1)
-	codesign_command_win32(SHA2 APPEND RETURN_BIN BIN_SHA2 RETURN_ARGS CMD_SHA2)
+	codesign_command_win32(
+		SHA1
+		RETURN_BIN BIN_SHA1
+		RETURN_ARGS CMD_SHA1
+		${ARGV}
+	)
+	codesign_command_win32(
+		SHA2 APPEND
+		RETURN_BIN BIN_SHA2
+		RETURN_ARGS CMD_SHA2
+		${ARGV}
+	)
+#		CERTIFICATE_FILE "${_ARGS_CERTIFICATE_FILE}"
+#		CERTIFICATE_NAME "${_ARGS_CERTIFICATE_NAME}"
+#		CERTIFICATE_PASS "${_ARGS_CERTIFICATE_PASS}"
 
 	# Sign Binaries
 	foreach(_target ${_ARGS_TARGETS})
+		file(TO_NATIVE_PATH "${CODESIGN_CERT_FILE}" CERT_PATH)
 		add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-			COMMAND ${BIN_SHA1} ARGS ${CMD_SHA1} $<TARGET_FILE:${_target}>
-			COMMAND ${BIN_SHA2} ARGS ${CMD_SHA2} $<TARGET_FILE:${_target}>
+			COMMAND ${BIN_SHA1} ARGS ${CMD_SHA1} $<SHELL_PATH:$<TARGET_FILE:${_target}>>
+			COMMAND ${BIN_SHA2} ARGS ${CMD_SHA2} $<SHELL_PATH:$<TARGET_FILE:${_target}>>
 		)
 		message(STATUS "CMake CodeSign: Added post-build step to project '${_target}'.")
 	endforeach()
