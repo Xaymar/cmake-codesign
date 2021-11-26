@@ -255,13 +255,13 @@ function(codesign_command_win32)
 		# Parameters: Timestamping
 		if(_ARGS_TIMESTAMPS)
 			if(TIMESTAMP_SHA1)
-				list(APPEND CMD_ARGS_1 -t "${TIMESTAMP_SHA1}")
+				list(APPEND CMD_ARGS_1 -t \"${TIMESTAMP_SHA1}\")
 			elseif(TIMESTAMP_SHA1_RFC3161)
-				list(APPEND CMD_ARGS_1 -ts "${TIMESTAMP_SHA1_RFC3161}")
+				list(APPEND CMD_ARGS_1 -ts \"${TIMESTAMP_SHA1_RFC3161}\")
 			endif()
 
 			if(TIMESTAMP_SHA2_RFC3161)
-				list(APPEND CMD_ARGS_2 -ts "${TIMESTAMP_SHA2_RFC3161}")
+				list(APPEND CMD_ARGS_2 -ts \"${TIMESTAMP_SHA2_RFC3161}\")
 			endif()
 		endif()
 
@@ -324,6 +324,7 @@ function(codesign_win32)
 		add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 			COMMAND ${BIN_SHA1} ARGS ${CMD_SHA1} $<SHELL_PATH:$<TARGET_FILE:${_target}>>
 			COMMAND ${BIN_SHA2} ARGS ${CMD_SHA2} $<SHELL_PATH:$<TARGET_FILE:${_target}>>
+			VERBATIM
 		)
 		message(STATUS "CMake CodeSign: Added post-build step to project '${_target}'.")
 	endforeach()
