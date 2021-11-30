@@ -23,7 +23,6 @@ cmake_minimum_required(VERSION 3.8...4.0)
 
 set(CODESIGN_PATH "" CACHE PATH "Path to code signing tool (if not in environment).")
 set(CODESIGN_ARGS "" CACHE STRING "Additional Arguments to pass to tool.")
-set(CODESIGN_TIMESTAMPS ON CACHE BOOL "Timestamp the signed binaries.")
 
 ################################################################################
 # Functions
@@ -128,7 +127,7 @@ function(codesign_timestamp_server)
 			"http://timestamp.entrust.net/TSS/RFC3161sha2TS"
 #			"http://tsa.swisssign.net"
 			"http://kstamp.keynectis.com/KSign/"
-			"http://tsa.quovadisglobal.com/TSS/HttpTspServer"
+#			"http://tsa.quovadisglobal.com/TSS/HttpTspServer"
 #			"http://ts.cartaodecidadao.pt/tsa/server"
 			"http://tss.accv.es:8318/tsa"
 #			"http://tsa.izenpe.com"
